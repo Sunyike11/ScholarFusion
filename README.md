@@ -1,240 +1,317 @@
-# ScholarFusion
+# ScholarFusion: 科研论文多模态检索与知识问答系统
 
-面向科研论文的检索增强问答系统，当前聚焦论文文档解析、混合检索、证据约束回答与 FastAPI 服务化；后续将扩展为支持文本、图像和图文对查询的 Any-to-Any 多模态科研助手。
+ScholarFusion 是在原 LlamaIndex 文档 RAG 项目上增量升级的科研论文阅读系统，面向 3D Gaussian Splatting 与人体重建论文场景，支持结构化论文解析、图文证据关联、Any-to-Any 多模态检索、带页码引用问答、相似方法搜索、结构化论文对比和轻量知识图谱。
 
-ScholarFusion 的目标场景是 3D Gaussian Splatting、人体重建与计算机视觉论文阅读：帮助研究者围绕论文正文、方法描述、架构图、实验表格和跨论文对比进行可追溯问答。
+当前真实可运行能力：
 
-## Current Capabilities
+- 原生 PDF 结构化解析，保留 `paper/page/section/element/bbox` 元数据。
+- Figure 去重、装饰性图片过滤、Figure-Caption-Paragraph 可追踪关联。
+- DashScope `qwen3-vl-embedding` Text/Image/Text-Image Pair 统一 2560 维向量。
+- SQLite-backed multimodal collections：`research_text_elements`、`research_multimodal_elements`、`research_page_visual`、`research_paper_level`。
+- Text/Image/Pair-to-Text/Figure/Page/Pair 的 Any-to-Any 检索。
+- Weighted RRF 混合召回和可替换的多模态 rerank fallback。
+- Evidence Bundle、Answerability Verifier、claim-level citation check 和无证据拒答。
+- SQLite 轻量论文知识图谱和 related-work summary baseline。
+- FastAPI Research API 与单机异步 ingestion task。
+- Phase2 统一检索入口、真实页面渲染视觉索引、primary/context citation 分离。
+- ScholarFusion Lite provisional evaluation、30 条人工审核队列，以及 Phase2.1 model-reviewed provisional ablation，明确区分非人工 Gold 指标。
+- Phase3 production convergence：Chroma dense + LlamaIndex BM25 + multimodal dense + page visual 的可追踪生产验证路径，protected Weighted RRF 修复 hybrid 退化，model-reviewed provisional ablation 与 8 条 human-verified Small Gold smoke evaluation 可复现。
 
-- **论文与文档摄取**：支持 PDF、TXT、DOCX、Markdown 上传，完成解析、切分、向量化与索引构建。
-- **混合检索**：结合向量检索与 BM25 稀疏检索，并通过 SentenceTransformer reranker 对候选片段重排序。
-- **证据约束问答**：在非流式 RAG 链路中执行 deterministic evidence verification，对缺少证据支持的回答进行保守改写或拒答。
-- **引用返回**：回答与检索来源绑定，返回文件名、页码、chunk id 和内容片段，便于人工复核。
-- **流式问答 API**：基于 FastAPI 提供非流式与 SSE 流式问答接口。
-- **知识库管理**：支持文档上传、文档列表、索引重置、会话历史和用户鉴权。
-- **工程化存储**：使用 ChromaDB 存储向量索引，Redis 存储文档、索引和缓存状态。
+快速验证：
 
-## Roadmap
-
-Coming soon:
-
-- **论文元素统一建模**：构建 `paper/page/section/element/bbox` 模型，原生提取正文、标题层级、图片、图注、表格、公式与页面坐标。
-- **版面感知 PDF 解析**：引入 OCR/Layout 降级策略，建立 Figure-Caption、正文引用和相邻段落之间的稳定证据映射。
-- **Any-to-Any 跨模态检索**：将 Text、Image、Text-Image Pair 编码到统一多模态向量空间，支持文本查图、图像查正文、图文对查方法。
-- **页面级视觉检索**：结合页面视觉多向量检索、多模态 reranker、RRF 融合和元数据过滤。
-- **Evidence Bundle 上下文管理**：将命中元素、所属章节、图片说明、关联正文、相邻段落及论文元数据统一组织进入生成上下文。
-- **科研知识图谱**：抽取 Paper、Method、Module、Dataset、Metric、Figure 等实体及关系，支持方法对比、实验结果查询和相关工作总结。
-- **科研评估集**：覆盖文本事实、图表理解、跨论文比较、多跳推理和不可回答问题，评估 Recall@K、MRR、nDCG、RAGAS、Citation Precision/Recall 与 P95 延迟。
-
-## Architecture
-
-```text
-Client
-  |
-  v
-FastAPI
-  |
-  +--> Auth / Session
-  |
-  +--> Document Upload
-  |      |
-  |      v
-  |   Ingestion Pipeline
-  |      |
-  |      +--> PDF / Markdown / Text Parsing
-  |      +--> Chunking
-  |      +--> Embedding
-  |      +--> ChromaDB + Redis
-  |
-  +--> Chat Query
-         |
-         v
-      RAG Workflow
-         |
-         +--> Vector Retrieval
-         +--> BM25 Retrieval
-         +--> Rerank
-         +--> Answer Generation
-         +--> Evidence Verification
-         |
-         v
-      Answer + Citations
+```bash
+conda run -n rag python -m pytest -q
+conda run -n rag python scripts/run_scholarfusion_smoke.py --pdf-dir data/research_papers --max-papers 3 --max-requests 45 --output-dir evaluation_results/scholarfusion_phase2 --force
+conda run -n rag python scripts/evaluate_paper_parsing.py --db-path evaluation_results/scholarfusion_phase2/scholarfusion.sqlite3 --output evaluation_results/scholarfusion_phase2/parsing_quality.json
+conda run -n rag python scripts/build_scholarfusion_lite_eval.py --db-path evaluation_results/scholarfusion_phase2/scholarfusion.sqlite3 --output-dir evaluation_data/scholarfusion_lite_v1 --target-count 100 --force
+conda run -n rag python scripts/build_phase2_review_queue.py --candidates evaluation_data/scholarfusion_lite_v1/candidates.jsonl --output evaluation_data/scholarfusion_lite_v1/phase2_review_queue.csv
+conda run -n rag python scripts/run_scholarfusion_lite_evaluation.py --db-path evaluation_results/scholarfusion_phase2/scholarfusion.sqlite3 --index-db-path evaluation_results/scholarfusion_phase2/scholarfusion_index.sqlite3 --dataset evaluation_data/scholarfusion_lite_v1/candidates.jsonl --output evaluation_results/scholarfusion_phase2/evaluation_metrics.json
+conda run -n rag python scripts/review_scholarfusion_eval_with_model.py --db-path evaluation_results/scholarfusion_phase2/scholarfusion.sqlite3 --candidates evaluation_data/scholarfusion_lite_v1/candidates.jsonl --output-dir evaluation_data/scholarfusion_model_reviewed_v1 --real-reviewer --force
+conda run -n rag python scripts/run_scholarfusion_phase21_ablation.py --db-path evaluation_results/scholarfusion_phase2/scholarfusion.sqlite3 --index-db-path evaluation_results/scholarfusion_phase2/scholarfusion_index.sqlite3 --dataset evaluation_data/scholarfusion_model_reviewed_v1/provisional.jsonl --output evaluation_results/scholarfusion_phase21/model_reviewed_ablation.json
+conda run -n rag env PYTHONPATH=. python scripts/trace_phase3_production_path.py
+conda run -n rag env PYTHONPATH=. python scripts/debug_rrf_pipeline.py
+conda run -n rag env PYTHONPATH=. python scripts/calibrate_answerability.py
+conda run -n rag env PYTHONPATH=. python scripts/run_phase3_final_ablation.py
+conda run -n rag env PYTHONPATH=. python scripts/build_small_gold_v1.py
 ```
 
-## Repository Structure
+能力边界请查看：
 
-```text
-.
-├── app/
-│   ├── main.py                 # FastAPI application entrypoint
-│   ├── routers/                # Chat, document and user APIs
-│   ├── schemas.py              # Pydantic request/response models
-│   └── services/               # Service layer for RAG application
-├── config/
-│   └── settings.py             # Model, retrieval and storage settings
-├── core/
-│   ├── application.py          # Session-aware RAG application facade
-│   ├── ingestion.py            # Document ingestion pipeline
-│   ├── workflow.py             # Retrieval, reranking and generation workflow
-│   ├── evidence_verifier.py    # Deterministic evidence grounding checks
-│   ├── pdf_parser.py           # PDF-to-Markdown parser
-│   └── documentManager.py      # Knowledge base document listing/reset helpers
-├── tests/
-│   └── test_evidence_verifier.py
-├── requirements.txt
-└── README.md
+- `SCHOLARFUSION_RESULT.md`
+- `SCHOLARFUSION_PHASE2_RESULT.md`
+- `SCHOLARFUSION_PHASE21_RESULT.md`
+- `SCHOLARFUSION_PHASE3_RESULT.md`
+- `RESUME_CAPABILITY_MATRIX.md`
+- `docs/scholarfusion_architecture.md`
+- `docs/multimodal_retrieval.md`
+- `docs/production_retrieval.md`
+- `docs/page_visual_retrieval.md`
+- `docs/citation_evaluation.md`
+- `docs/model_reviewed_evaluation_protocol.md`
+- `docs/production_retrieval_trace.md`
+- `docs/model_reviewed_ablation_results.md`
+- `docs/production_convergence.md`
+- `docs/calibration.md`
+- `docs/query_breakdown.md`
+- `docs/small_gold_evaluation.md`
+- `docs/final_ablation.md`
+- `docs/evaluation_lite.md`
+
+---
+
+# LlamaIndex RAG 实战项目
+
+## 项目概述
+
+这是一个基于 LlamaIndex 框架构建的检索增强生成（RAG）系统，提供了完整的文档处理、检索和对话功能。该系统能够将多种格式的文档（PDF、TXT、DOCX、Markdown）导入到向量数据库中，并通过混合检索策略（向量检索 + BM25）提供高质量的问答服务。
+
+### 核心功能
+
+- **多格式文档处理**：支持PDF、TXT、DOCX、Markdown等多种文档格式的上传和解析
+- **混合检索策略**：结合向量检索和BM25关键词检索，提升检索精度
+- **文档重排序**：使用专用的重排序模型优化检索结果质量
+- **流式回答生成**：支持SSE流式返回生成内容，提供更好的用户体验
+- **多会话管理**：支持多个独立会话的历史记录管理
+- **用户认证机制**：基于JWT的安全认证系统
+- **历史记录优化**：自动管理和优化会话历史长度，防止超长历史导致的性能问题
+
+## 技术架构
+
+### 系统架构
+
+```
+┌─────────────┐      ┌─────────────┐      ┌─────────────┐
+│  客户端应用  │ ──→ │  FastAPI API │ ──→ │ RAG Service │
+└─────────────┘      └─────────────┘      └─────┬───────┘
+                                               │
+                       ┌───────────────────────┼───────────────────────┐
+                       ▼                       ▼                       ▼
+           ┌─────────────────┐     ┌─────────────────┐     ┌─────────────────┐
+           │  Document       │     │  RAG            │     │  LLM            │
+           │  Ingestion      │     │  Workflow       │     │  Model          │
+           │  Pipeline       │     │                 │     │                 │
+           └────────┬────────┘     └────────┬────────┘     └────────┬────────┘
+                    │                       │                       │
+                    ▼                       ▼                       ▼
+           ┌─────────────────┐     ┌─────────────────┐     ┌─────────────────┐
+           │  ChromaDB       │     │  Redis          │     │  DashScope      │
+           │  (向量存储)      │     │  (文档存储)     │     │  (文生模型)     │
+           └─────────────────┘     └─────────────────┘     └─────────────────┘
 ```
 
-## Tech Stack
+### 主要模块
 
-- **API**: FastAPI, Pydantic, Uvicorn
-- **RAG framework**: LlamaIndex
-- **LLM**: DashScope-compatible chat model
-- **Embedding**: HuggingFace embedding model
-- **Retrieval**: Vector retrieval, BM25, SentenceTransformer reranker
-- **Storage**: ChromaDB, Redis
-- **Document processing**: PyPDF, python-docx, Unstructured, PyMuPDF-based PDF parsing
-- **Testing**: pytest
+1. **API层**：基于FastAPI提供RESTful API接口
+2. **服务层**：封装核心RAG逻辑，处理请求适配
+3. **核心层**：包含文档摄取、检索工作流和应用管理
+4. **存储层**：使用ChromaDB和Redis进行数据持久化
 
-## Evidence-Grounded Answering
+## 项目结构
 
-The current evidence verifier is deterministic by design. It does not use an LLM judge.
+```
+llamaindex实战案例-新/
+├── app/                      # FastAPI应用
+│   ├── __init__.py
+│   ├── main.py               # 应用入口
+│   ├── routers/              # API路由
+│   │   ├── chat.py           # 聊天相关接口
+│   │   ├── documents.py      # 文档相关接口
+│   │   └── users.py          # 用户相关接口
+│   ├── schemas.py            # Pydantic数据模型
+│   └── services/             # 服务层
+│       └── rag_service.py    # RAG服务封装
+├── config/                   # 配置
+│   └── settings.py           # 应用配置类
+├── core/                     # 核心业务逻辑
+│   ├── __init__.py
+│   ├── application.py        # RAG应用主类
+│   ├── documentManager.py    # 文档管理器
+│   ├── events.py             # 事件定义
+│   ├── ingestion.py          # 文档摄取管道
+│   ├── pdf_parser.py         # PDF解析器
+│   ├── pdfProcessor.py       # PDF处理器
+│   └── workflow.py           # RAG工作流
+├── file/                     # 文件存储
+│   ├── chroma_db/            # Chroma向量数据库
+│   ├── image/                # 图片存储
+│   ├── logs/                 # 日志文件
+│   └── storage_bm25/         # BM25索引存储
+├── requirements.txt          # 项目依赖
+├── test/                     # 测试目录
+└── utils/                    # 工具类
+    └── logger.py             # 日志配置
+```
 
-For each generated answer, the verifier checks:
+## 技术栈
 
-- whether retrieved chunks exist;
-- whether the top retrieval score passes the configured threshold;
-- whether each answer sentence is covered by retrieved chunk text through exact or token-overlap matching;
-- whether unsupported claims should be removed or trigger refusal.
+### 核心框架
+- **LlamaIndex**: RAG应用构建框架
+- **FastAPI**: 高性能Web框架
+- **Pydantic**: 数据验证和设置管理
 
-Expected output fields:
+### 模型与向量库
+- **DashScope LLM**: 生成模型（通义千问）
+- **HuggingFace Embedding**: 本地嵌入模型
+- **ChromaDB**: 向量数据库
+- **Redis**: 文档和索引存储
+
+### 文档处理
+- **PyPDF**: PDF文件处理
+- **python-docx**: Word文档处理
+- **Unstructured**: 非结构化数据处理
+
+### 检索优化
+- **BM25Retriever**: 关键词检索
+- **SentenceTransformerRerank**: 文档重排序
+
+## 核心功能模块
+
+### 1. 文档摄取管道 (DocumentIngestionPipeline)
+
+负责文档的上传、解析、切分、向量化和索引构建：
+
+- 支持多格式文档处理
+- 文档分块和向量化
+- 索引持久化存储
+- 缓存机制优化
+
+### 2. RAG工作流 (RAGWorkflow)
+
+实现检索增强生成的核心流程：
+
+- 混合检索策略（向量检索 + BM25）
+- 检索结果重排序
+- 上下文构建和回答生成
+
+### 3. RAG应用管理 (RAGApplication)
+
+应用层面的功能整合：
+
+- 多会话管理
+- 流式/非流式查询支持
+- 历史记录优化（防止超长历史导致的性能问题）
+- 错误处理和日志记录
+
+## API接口
+
+### 文档管理
+
+- **POST /api/docs/upload**: 上传并处理文档
+- **GET /api/docs/list**: 获取已上传文档列表
+- **POST /api/docs/reset**: 重置系统（清空索引等）
+
+### 对话功能
+
+- **POST /api/chat/query**: 发送问题，获取回答
+- **POST /api/chat/stream**: 流式获取回答
+- **POST /api/chat/clear**: 清空会话历史
+
+### 用户管理
+
+- **POST /users/register**: 用户注册
+- **POST /users/login**: 用户登录
+
+### 系统监控
+
+- **GET /api/health**: 健康检查
+
+## 配置说明
+
+主要配置项位于 `config/settings.py`：
+
+- **模型配置**: API密钥、模型名称、温度参数
+- **文档处理**: 分块大小、重叠度
+- **检索配置**: 相似度阈值、Top-K参数、重排序配置
+- **存储路径**: 数据库和文件存储路径
+
+## 安装与部署
+
+### 前置条件
+
+- Python 3.10+
+- Redis服务
+- CUDA环境（推荐，用于加速嵌入模型）
+
+### 安装步骤
+
+1. 克隆项目
+2. 安装依赖：
+   ```bash
+   pip install -r requirements.txt
+   ```
+3. 配置环境变量（在.env文件中）：
+   ```
+   DASHSCOPE_API_KEY=your_api_key_here
+   ```
+4. 启动应用：
+   ```bash
+   python -m app.main
+   ```
+
+### Docker部署
+
+（待实现）
+
+## 使用示例
+
+### 文档上传与处理
 
 ```python
-{
-    "grounded": bool,
-    "answerable": bool,
-    "cited_chunk_ids": list[str],
-    "unsupported_claims": list[str],
-    "suggested_revision": str,
-}
+from app.services.rag_service import RAGService
+
+rag_service = RAGService()
+result = rag_service.upload_files(["path/to/file.pdf"])
+print(result)
 ```
 
-Citation format:
+### 发起查询
 
-```text
-[source: paper_or_file_name, page page_number, chunk_id]
+```python
+from app.services.rag_service import RAGService
+
+rag_service = RAGService()
+history, error = rag_service.query("session_1", "请介绍项目的核心功能")
+if not error:
+    print(history[-1]['content'])  # 打印最新回答
 ```
 
-## API Overview
+### 流式查询
 
-### Health
+```python
+from app.services.rag_service import RAGService
+import asyncio
 
-```http
-GET /api/health
+async def main():
+    rag_service = RAGService()
+    async for chunk in rag_service.query_stream("session_1", "请详细介绍RAG技术", True):
+        if chunk['type'] == 'text':
+            print(chunk['content'], end='', flush=True)
+
+asyncio.run(main())
 ```
 
-### Documents
+## 系统优化
 
-```http
-POST /api/docs/upload
-GET  /api/docs/list
-POST /api/docs/reset
-```
+1. **历史记录管理**：实现了智能的历史记录长度限制和截断机制，防止过长历史导致的空回复问题
+2. **图片处理优化**：改进了Markdown图片提取逻辑，支持Windows路径格式和图片去重
+3. **检索优化**：使用混合检索和重排序策略提升检索质量
+4. **错误处理**：完善的异常捕获和日志记录机制
 
-### Chat
+## 注意事项
 
-```http
-POST /api/chat/chat
-POST /api/chat/chat/stream
-GET  /api/chat/history
-POST /api/chat/clear
-```
+1. **API密钥安全**：请妥善保管您的DashScope API密钥
+2. **存储容量**：监控向量数据库和Redis存储的使用情况
+3. **性能优化**：对于大规模文档集，可能需要调整分块大小和检索参数
+4. **安全配置**：生产环境中请修改CORS设置，限制允许的来源
 
-### Users
+## 扩展方向
 
-```http
-POST /users/register
-POST /users/token
-GET  /users/me
-PUT  /users/me
-POST /users/logout
-```
+1. 支持更多文档格式
+2. 实现文档更新和版本控制
+3. 添加文档摘要和可视化功能
+4. 多模型支持和模型切换
+5. 添加用户权限管理
 
-## Quick Start
-
-### 1. Create environment
-
-```bash
-python -m venv .venv
-source .venv/bin/activate
-pip install -r requirements.txt
-```
-
-### 2. Configure environment variables
-
-Create `.env`:
-
-```bash
-DASHSCOPE_API_KEY=your_api_key
-DASHSCOPE_BASE_URL=your_dashscope_base_url
-```
-
-### 3. Start Redis
-
-The application expects Redis on `127.0.0.1:6379`.
-
-```bash
-redis-server
-```
-
-### 4. Start API server
-
-```bash
-uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload
-```
-
-Open:
-
-```text
-http://localhost:8000/docs
-```
-
-## Testing
-
-Run unit tests:
-
-```bash
-PYTHONPATH=. pytest tests -q
-```
-
-The current test suite focuses on deterministic evidence verification:
-
-- supported answer with citation;
-- unsupported answer;
-- empty retrieval result;
-- low-score retrieval refusal;
-- partially unsupported answer revision.
-
-## Configuration
-
-Core settings live in `config/settings.py`:
-
-- `MODEL`, `TEMPERATURE`
-- `EMBEDDING_MODEL_PATH`
-- `RERANK_MODEL_PATH`
-- `SIMILARITY_TOP_K`
-- `RERANK_TOP_K`
-- `SIMILARITY_CUTOFF`
-- ChromaDB, Redis and document storage paths
-
-For local development, update model paths to match your machine.
-
-## Current Limitations
-
-- The current verifier is lexical and deterministic; it is not an NLI model and does not fully understand paraphrases or complex multi-hop reasoning.
-- Streaming answers currently return sources before generation; strict post-generation evidence rewriting is applied to the non-streaming RAG path.
-- Multimodal retrieval, page-level visual embeddings, knowledge graph extraction and research benchmark metrics are planned work.
-
-## License
+## 许可证
 
 MIT License

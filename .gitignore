@@ -126,5 +126,25 @@ file/chroma_db/
 file/image/
 file/storage_bm25/
 file/logs/
-PHASE_*.md
+file/research/
+
+# Local research validation data and generated reports
+data/research_papers/
+evaluation_data/
+evaluation_results/
+RESEARCH_RAG_*_ANALYSIS.md
+RESEARCH_RAG_*_PLAN.md
+RESEARCH_RAG_*_RESULT.md
+PHASE_RAG_*_ANALYSIS.md
+PHASE_RAG_*_RESULT.md
 summary.md
+
+# Local environments and test caches
+.venv/
+venv/
+.pytest_cache/
+.env.*
+
+# Personal career preparation notes
+INTERVIEW_GUIDE_SCHOLARFUSION.md
+RESUME_CAPABILITY_MATRIX.md

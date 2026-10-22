@@ -8,7 +8,7 @@ FastAPI 应用入口：
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
-from app.routers import chat, documents, users
+from app.routers import chat, documents, research, users
 from utils.logger import setup_logger
 
 logger = setup_logger(__name__)
@@ -29,6 +29,7 @@ app.add_middleware(
 app.include_router(documents.router, prefix="/api/docs", tags=["documents"])
 app.include_router(chat.router, prefix="/api/chat", tags=["chat"])
 app.include_router(users.router, prefix="/users", tags=["users"])
+app.include_router(research.router, prefix="/api", tags=["research"])
 
 
 @app.get("/api/health")

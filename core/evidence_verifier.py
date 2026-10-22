@@ -24,7 +24,7 @@ class EvidenceCheckResult:
 
 class EvidenceVerifier:
     """
-    Deterministic evidence verifier for citation-grounded RAG answers.
+    Deterministic Phase A verifier.
 
     This is intentionally not an LLM judge. It only checks whether answer
     sentences are covered by retrieved chunk text using exact/overlap signals.

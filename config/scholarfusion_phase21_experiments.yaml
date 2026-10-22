@@ -1,0 +1,44 @@
+dataset_version: scholarfusion_model_reviewed_v1
+dataset_status: provisional
+review_status: model_reviewed
+not_gold: true
+human_verified: false
+dataset_path: evaluation_data/scholarfusion_model_reviewed_v1/provisional.jsonl
+source_candidates_path: evaluation_data/scholarfusion_lite_v1/candidates.jsonl
+paper_ids:
+  - paper_2253ccbe07a9aa8f
+  - paper_eb3a6842c06dd144
+  - paper_6189ec0865942167
+index_versions:
+  structured_store: evaluation_results/scholarfusion_phase2/scholarfusion.sqlite3
+  vector_index: evaluation_results/scholarfusion_phase2/scholarfusion_index.sqlite3
+embedding_model: qwen3-vl-embedding
+text_embedding_model: scholarfusion_text_elements
+multimodal_embedding_model: qwen3-vl-embedding
+text_reranker: deterministic_text_overlap_fallback
+multimodal_reranker: qwen3-vl-rerank
+generator_model: scholarfusion_lite_builder_v1
+reviewer_model: qwen-plus
+top_k: 10
+fusion_weights:
+  bm25: 1.0
+  text_dense: 1.0
+  multimodal_dense: 1.2
+  page_visual: 0.8
+  paper_level: 0.5
+context_budget:
+  max_chars: 6000
+  max_elements_per_paper: 6
+answerability_thresholds:
+  retrieval_score_threshold: 0.0
+  rerank_score_threshold: 0.0
+  entity_coverage_threshold: 0.18
+  attribute_coverage_threshold: 0.18
+  verifier_confidence_threshold: 0.34
+  minimum_primary_evidence: 1
+citation_policy:
+  primary_citations_only_for_precision: true
+  alternative_aware_metrics: true
+  context_citations_do_not_count_as_primary: true
+timestamp: "2026-06-20T15:40:00+08:00"
+git_commit: 0c9aa7e58a2ad8dd7dbf6018116360a126c73845

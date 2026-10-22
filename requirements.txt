@@ -32,7 +32,6 @@ faiss-cpu>=1.7.0             # 高性能向量搜索
 
 # 开发工具
 python-dotenv>=1.0.0         # 环境变量管理
-pytest>=8.0.0                # 单元测试
 
 #
 fastapi==0.115.9
@@ -43,3 +42,6 @@ PyJWT==2.10.1
 pwdlib==0.3.0
 pwdlib[argon2]==0.3.0
 # pip install torch==2.7.1 torchvision torchaudio -f https://mirrors.aliyun.com/pytorch-wheels/cu128/
+
+# Test runner
+pytest>=8.0.0
